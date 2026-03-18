@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   try {
     const result = await resend.emails.send({
       from: 'Kyron Medical <onboarding@resend.dev>',
-      to: 'mimanasa.30@gmail.com',
+      to: 'mlmanasa.30@gmail.com',
       subject: 'Test Email from Kyron Medical',
       html: '<p>This is a test email. If you receive this, Resend is working!</p>'
     });
