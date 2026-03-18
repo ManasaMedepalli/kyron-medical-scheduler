@@ -9,7 +9,7 @@ export async function sendAppointmentEmail(appointment: Appointment) {
   
   try {
     await resend.emails.send({
-      from: 'Kyron Medical <noreply@yourdomain.com>', // You'll need to verify domain or use resend's
+      from: 'Kyron Medical  <onboarding@resend.dev>', // You'll need to verify domain or use resend's
       to: appointment.patient.email,
       subject: 'Appointment Confirmation - Kyron Medical',
       html: `
