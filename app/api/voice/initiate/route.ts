@@ -38,7 +38,8 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
             phone_number: patient.phone,
-            pathway_id: 'd86565f7-2fcc-48c3-9266-506595f44c4c',
+            //pathway_id: 'd86565f7-2fcc-48c3-9266-506595f44c4c',
+            pathway_id: '4037cc08-b517-490e-8d06-a4f6f3e50e60',
             voice: 'maya',
             first_sentence: `Hi ${patient.firstName}, I'm continuing our conversation about your appointment. ${getContextualGreeting(conversation)}`,
             // Pass context via metadata instead
