@@ -38,23 +38,16 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
             phone_number: patient.phone,
-            pathway_id: 'd86565f7-2fcc-48c3-9266-506595f44c4c', // ADD THIS LINE
+            pathway_id: 'd86565f7-2fcc-48c3-9266-506595f44c4c',
             voice: 'maya',
-            webhook: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook`,
             first_sentence: `Hi ${patient.firstName}, I'm continuing our conversation about your appointment. ${getContextualGreeting(conversation)}`,
-            dynamic_data: [
-                {
-                    name: 'patient_context',
-                    data: contextSummary
-                },
-                {
-                    name: 'session_id',
-                    data: sessionId
-                }
-            ],
+            // Pass context via metadata instead
             metadata: {
                 sessionId,
-                patientEmail: patient.email
+                patientEmail: patient.email,
+                patientName: `${patient.firstName} ${patient.lastName}`,
+                reason: conversation.pendingBooking?.reason || '',
+                doctorId: conversation.pendingBooking?.doctorId || 0
             }
         })
     });
