@@ -38,6 +38,7 @@
 import { Resend } from 'resend';
 import { Appointment } from './types';
 import { doctors } from './doctors';
+import { format } from 'date-fns';
 
 const resend = process.env.RESEND_API_KEY 
   ? new Resend(process.env.RESEND_API_KEY)
@@ -64,11 +65,11 @@ export async function sendAppointmentEmail(appointment: Appointment) {
           <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <p><strong>Doctor:</strong> ${doctor?.name}</p>
             <p><strong>Specialty:</strong> ${doctor?.specialty}</p>
-            <p><strong>Date & Time:</strong> ${appointment.datetime}</p>
+            <p><strong>Date & Time:</strong> ${format(new Date(appointment.datetime), "EEEE, MMMM d, yyyy 'at' h:mm a")}</p>
             <p><strong>Reason:</strong> ${appointment.reason}</p>
           </div>
           <p>Please arrive 10 minutes early for check-in.</p>
-          <p>If you need to reschedule, please call us at (555) 123-4567.</p>
+          <p>If you need to reschedule, please call us at (312) 555-0100.</p>
           <p>Best regards,<br>Kyron Medical Team</p>
         </div>
       `

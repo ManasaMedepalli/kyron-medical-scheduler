@@ -44,7 +44,7 @@ function generateSlots(
   return slots;
 }
 
-const startDate = new Date('2025-03-19');
+const startDate = new Date();
 
 export const doctors: Doctor[] = [
   {

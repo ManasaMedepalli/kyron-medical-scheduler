@@ -17,7 +17,8 @@ export async function POST(req: NextRequest) {
     const body = JSON.parse(text);
     console.log('[webhook] parsed body:', JSON.stringify(body));
     
-    const { tool, parameters, metadata } = body;
+    const { tool, parameters, input, metadata } = body;
+    const params_resolved = parameters ?? input;
 
     const callerPhone = body.from || body.caller || body.phone;
     if (callerPhone) {
@@ -30,10 +31,10 @@ export async function POST(req: NextRequest) {
     
     switch (tool) {
       case 'check_availability':
-        return handleCheckAvailability(parameters);
-        
+        return handleCheckAvailability(params_resolved);
+
       case 'book_appointment':
-        return handleBookAppointment(parameters, metadata);
+        return handleBookAppointment(params_resolved, metadata);
         
       default:
         console.log('[webhook] unknown tool:', tool, 'full body:', JSON.stringify(body));

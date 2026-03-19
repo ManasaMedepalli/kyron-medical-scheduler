@@ -61,9 +61,7 @@ export default function ChatInterface() {
     }
   };
   
-  //const hasPatientInfo = conversation?.patient !== undefined;
-  //const hasPatientInfo = !!(conversation?.patient?.firstName && conversation?.patient?.phone);
-  const hasPatientInfo = messages.filter(m => m.role === 'assistant').length >= 2;
+  const hasPatientInfo = !!(conversation?.patient?.phone);
   
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
