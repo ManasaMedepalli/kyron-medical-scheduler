@@ -18,6 +18,7 @@ export interface Patient {
   dob: string;
   phone: string;
   email: string;
+  smsOptIn?: boolean;
 }
 
 export interface Appointment {
@@ -25,6 +26,7 @@ export interface Appointment {
   patient: Patient;
   doctorId: number;
   doctorName: string;
+  specialty: string;
   slotId: string;
   datetime: string;
   reason: string;
@@ -33,6 +35,7 @@ export interface Appointment {
 
 export interface Conversation {
   sessionId: string;
+  phone?: string;
   patient?: Patient;
   messages: { role: string; content: string }[];
   pendingBooking?: {
@@ -41,6 +44,7 @@ export interface Conversation {
     reason: string;
     suggestedSlots: string[];
   };
+  blandCallId?: string;
   lastUpdated: string;
 }
 

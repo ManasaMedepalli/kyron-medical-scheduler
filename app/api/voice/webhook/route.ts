@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { doctors, getAvailableSlots } from '@/lib/doctors';
-import { saveAppointment } from '@/lib/db';
+import { saveAppointment, getConversationByPhone } from '@/lib/db';
 import { sendAppointmentEmail } from '@/lib/email';
 import { format } from 'date-fns';
 
@@ -8,8 +8,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     
-    // Bland sends tool calls in this format
     const { tool, parameters, metadata } = body;
+
+    // Call-back memory: look up prior conversation by caller's phone
+    const callerPhone = body.from || body.caller || body.phone;
+    let priorContext = '';
+    if (callerPhone) {
+      const prior = await getConversationByPhone(callerPhone);
+      if (prior?.patient) {
+        const p = prior.patient;
+        priorContext = `RETURNING PATIENT. Name: ${p.firstName} ${p.lastName}, DOB: ${p.dob}, Email: ${p.email}.`;
+        if (prior.pendingBooking) {
+          priorContext += ` Was scheduling with ${prior.pendingBooking.doctorName} for ${prior.pendingBooking.reason}. Had not confirmed a slot yet.`;
+        }
+      }
+    }
     
     switch (tool) {
       case 'check_availability':
@@ -20,7 +33,8 @@ export async function POST(req: NextRequest) {
         
       default:
         return NextResponse.json({
-          error: 'Unknown tool'
+          error: 'Unknown tool',
+          context: priorContext || undefined
         }, { status: 400 });
     }
     
@@ -58,14 +72,18 @@ async function handleBookAppointment(params: any, metadata: any) {
   const { slotId, patientInfo, doctorId, reason } = params;
   
   const doctor = doctors.find(d => d.id === doctorId);
+
+  // Get proper datetime from slot object instead of parsing the slot ID string
+  const slot = doctor?.availability.find(s => s.id === slotId);
   
   const appointment = {
-    id: slotId,
+    id: crypto.randomUUID(),
     patient: patientInfo,
     doctorId,
     doctorName: doctor?.name || '',
+    specialty: doctor?.specialty || '',
     slotId,
-    datetime: slotId.split('-').slice(1).join('-'),
+    datetime: slot ? slot.datetime.toISOString() : new Date().toISOString(),
     reason,
     createdAt: new Date().toISOString()
   };
@@ -76,6 +94,6 @@ async function handleBookAppointment(params: any, metadata: any) {
   return NextResponse.json({
     success: true,
     appointmentId: appointment.id,
-    message: `Perfect! I've booked your appointment with ${doctor?.name}. You'll receive a confirmation email at ${patientInfo.email} shortly.`
+    message: `Perfect! I've booked your appointment with ${doctor?.name}. You'll receive a confirmation email shortly.`
   });
 }
