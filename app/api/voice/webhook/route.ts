@@ -1,26 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { doctors, getAvailableSlots } from '@/lib/doctors';
+import { doctors } from '@/lib/doctors';
 import { saveAppointment, getConversationByPhone } from '@/lib/db';
 import { sendAppointmentEmail } from '@/lib/email';
 import { format } from 'date-fns';
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const text = await req.text();
+    console.log('[webhook] raw body:', text);
+    
+    if (!text || text.trim() === '') {
+      console.log('[webhook] empty body received');
+      return NextResponse.json({ received: true });
+    }
+
+    const body = JSON.parse(text);
+    console.log('[webhook] parsed body:', JSON.stringify(body));
     
     const { tool, parameters, metadata } = body;
 
-    // Call-back memory: look up prior conversation by caller's phone
     const callerPhone = body.from || body.caller || body.phone;
-    let priorContext = '';
     if (callerPhone) {
       const prior = await getConversationByPhone(callerPhone);
       if (prior?.patient) {
         const p = prior.patient;
-        priorContext = `RETURNING PATIENT. Name: ${p.firstName} ${p.lastName}, DOB: ${p.dob}, Email: ${p.email}.`;
-        if (prior.pendingBooking) {
-          priorContext += ` Was scheduling with ${prior.pendingBooking.doctorName} for ${prior.pendingBooking.reason}. Had not confirmed a slot yet.`;
-        }
+        console.log('[webhook] returning patient:', p.firstName, p.lastName);
       }
     }
     
@@ -32,54 +36,66 @@ export async function POST(req: NextRequest) {
         return handleBookAppointment(parameters, metadata);
         
       default:
-        return NextResponse.json({
-          error: 'Unknown tool',
-          context: priorContext || undefined
-        }, { status: 400 });
+        console.log('[webhook] unknown tool:', tool, 'full body:', JSON.stringify(body));
+        return NextResponse.json({ received: true, tool });
     }
     
   } catch (error) {
-    console.error('Webhook error:', error);
-    return NextResponse.json(
-      { error: 'Webhook processing failed' },
-      { status: 500 }
-    );
+    console.error('[webhook] error:', error);
+    return NextResponse.json({ received: true }, { status: 200 });
   }
 }
 
 function handleCheckAvailability(params: any) {
   const { doctorId, preferredDay } = params;
+  const doctor = doctors.find(d => d.id === Number(doctorId));
   
-  const slots = getAvailableSlots(doctorId, preferredDay);
-  const doctor = doctors.find(d => d.id === doctorId);
+  if (!doctor) {
+    return NextResponse.json({ success: false, message: 'Doctor not found' });
+  }
+
+  let slots = doctor.availability.filter(s => s.available);
+  
+  if (preferredDay) {
+    const dayLower = preferredDay.toLowerCase();
+    slots = slots.filter(s => {
+      const dayName = format(s.datetime, 'EEEE').toLowerCase();
+      return dayName.includes(dayLower);
+    });
+  }
+
+  slots = slots.slice(0, 5);
   
   const formattedSlots = slots.map(s => ({
     id: s.id,
     time: format(s.datetime, 'EEEE, MMMM d \'at\' h:mm a')
   }));
   
+  console.log('[webhook] check_availability returning slots:', formattedSlots);
+  
   return NextResponse.json({
     success: true,
-    doctor: doctor?.name,
+    doctor: doctor.name,
     slots: formattedSlots,
     message: formattedSlots.length > 0 
-      ? `I found ${formattedSlots.length} available times with ${doctor?.name}`
-      : `I don't have any available times for that day. Let me check other options.`
+      ? `${doctor.name} has ${formattedSlots.length} available times: ${formattedSlots.map(s => s.time).join(', ')}`
+      : `No available times found.`
   });
 }
 
 async function handleBookAppointment(params: any, metadata: any) {
-  const { slotId, patientInfo, doctorId, reason } = params;
+  console.log('[webhook] book_appointment params:', JSON.stringify(params));
   
-  const doctor = doctors.find(d => d.id === doctorId);
-
-  // Get proper datetime from slot object instead of parsing the slot ID string
+  const { slotId, patientInfo, doctorId, reason } = params;
+  const doctor = doctors.find(d => d.id === Number(doctorId));
   const slot = doctor?.availability.find(s => s.id === slotId);
   
+  console.log('[webhook] found doctor:', doctor?.name, 'found slot:', slot?.id);
+
   const appointment = {
     id: crypto.randomUUID(),
     patient: patientInfo,
-    doctorId,
+    doctorId: Number(doctorId),
     doctorName: doctor?.name || '',
     specialty: doctor?.specialty || '',
     slotId,
@@ -91,9 +107,11 @@ async function handleBookAppointment(params: any, metadata: any) {
   await saveAppointment(appointment);
   await sendAppointmentEmail(appointment);
   
+  console.log('[webhook] appointment saved and email sent');
+  
   return NextResponse.json({
     success: true,
     appointmentId: appointment.id,
-    message: `Perfect! I've booked your appointment with ${doctor?.name}. You'll receive a confirmation email shortly.`
+    message: `Appointment booked with ${doctor?.name}. Confirmation email sent to ${patientInfo?.email}.`
   });
 }
