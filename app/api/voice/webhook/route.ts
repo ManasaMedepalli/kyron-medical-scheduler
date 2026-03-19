@@ -52,41 +52,57 @@ export async function POST(req: NextRequest) {
 
 async function handleCallCompletion(body: any) {
   const sessionId = body.metadata?.sessionId ?? null;
-  const input = body.variables?.input;
-  const { slotId, doctorId, reason, patientInfo } = input;
+  const doctorId  = Number(body.metadata?.doctorId ?? body.variables?.input?.doctorId ?? 0);
+  const summary   = body.summary ?? body.concatenated_transcript ?? '';
 
-  // Prefer stored patient (has guaranteed email) over what Bland.ai sent
+  // Look up stored patient — has guaranteed email, full name, DOB
   let storedPatient = null;
   if (sessionId) {
     const conversation = await getConversation(sessionId);
     storedPatient = conversation?.patient ?? null;
   }
 
-  const patient = storedPatient
-    ? { ...patientInfo, ...storedPatient }
-    : patientInfo;
+  // Fall back to metadata fields if session lookup fails
+  const email = storedPatient?.email ?? body.metadata?.patientEmail ?? null;
 
-  console.log('[webhook] call completion — patient email:', patient?.email);
-
-  if (!patient?.email) {
+  if (!email) {
     console.error('[webhook] call completion — no email found, cannot send confirmation');
     return NextResponse.json({ received: true });
   }
 
-  const doctor = doctors.find(d => d.id === Number(doctorId));
-  const now = new Date();
-  const slot = doctor?.availability.find(s => s.id === slotId && s.datetime > now);
+  const patient = storedPatient ?? {
+    firstName: body.metadata?.patientName?.split(' ')[0] ?? '',
+    lastName:  body.metadata?.patientName?.split(' ').slice(1).join(' ') ?? '',
+    email,
+    phone: body.to ?? '',
+    dob: '',
+  };
+
+  console.log('[webhook] call completion — patient:', patient.firstName, patient.email);
+
+  // Find which slot was booked by matching the summary text against our slot database
+  const doctor = doctors.find(d => d.id === doctorId);
+  const slot   = doctor ? findSlotFromSummary(summary, doctor) : null;
+
+  console.log('[webhook] call completion — matched slot:', slot?.id ?? 'none, using fallback');
+
+  // Use reason from pendingBooking (stored in session) or a generic fallback
+  let reason = 'Medical appointment';
+  if (sessionId) {
+    const conversation = await getConversation(sessionId);
+    if (conversation?.pendingBooking?.reason) reason = conversation.pendingBooking.reason;
+  }
 
   const appointment = {
     id: crypto.randomUUID(),
     patient,
-    doctorId: Number(doctorId),
-    doctorName: doctor?.name || '',
-    specialty: doctor?.specialty || '',
-    slotId,
-    datetime: slot ? slot.datetime.toISOString() : now.toISOString(),
+    doctorId,
+    doctorName: doctor?.name ?? '',
+    specialty:  doctor?.specialty ?? '',
+    slotId:     slot?.id ?? 'voice-booking',
+    datetime:   slot ? slot.datetime.toISOString() : new Date().toISOString(),
     reason,
-    createdAt: now.toISOString()
+    createdAt:  new Date().toISOString(),
   };
 
   try {
@@ -98,12 +114,42 @@ async function handleCallCompletion(body: any) {
 
   try {
     await sendAppointmentEmail(appointment);
-    console.log('[webhook] call completion — email sent to:', patient.email);
+    console.log('[webhook] call completion — email sent to:', email);
   } catch (emailErr) {
     console.error('[webhook] call completion — email failed:', emailErr);
   }
 
   return NextResponse.json({ received: true });
+}
+
+// Match a slot against the Bland.ai summary text.
+// Summary example: "Tuesday, March 24th at 8:30 AM"
+function findSlotFromSummary(summary: string, doctor: (typeof doctors)[0]): (typeof doctor.availability)[0] | null {
+  const now   = new Date();
+  const lower = summary.toLowerCase();
+  const slots = doctor.availability.filter(s => s.available && s.datetime > now);
+
+  for (const slot of slots) {
+    const day   = slot.datetime.getDate();
+    const hr    = slot.datetime.getHours();
+    const min   = slot.datetime.getMinutes();
+    const hr12  = hr % 12 || 12;
+    const ampm  = hr < 12 ? 'am' : 'pm';
+
+    const dayMatch = lower.includes(day.toString());
+
+    const timeVariants = [
+      `${hr12}:${min.toString().padStart(2, '0')} ${ampm}`,  // "8:30 am"
+      `${hr12}:${min.toString().padStart(2, '0')}${ampm}`,   // "8:30am"
+      ...(min === 0 ? [`${hr12} ${ampm}`, `${hr12}${ampm}`] : []), // "9 am" / "9am"
+    ];
+
+    const timeMatch = timeVariants.some(t => lower.includes(t));
+
+    if (dayMatch && timeMatch) return slot;
+  }
+
+  return null;
 }
 
 function handleCheckAvailability(params: any) {
