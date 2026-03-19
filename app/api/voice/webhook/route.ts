@@ -25,22 +25,85 @@ export async function POST(req: NextRequest) {
     const sessionId = req.nextUrl.searchParams.get('sessionId') ?? body.metadata?.sessionId ?? null;
     console.log('[webhook] sessionId from URL:', sessionId);
 
+    // Call completion event — Bland.ai sends this after the call ends.
+    // variables.input contains the last tool call (book_appointment) with full patientInfo.
+    if (!tool && body.status === 'completed' && body.variables?.input?.slotId) {
+      console.log('[webhook] call completion event — processing booking from variables.input');
+      return handleCallCompletion(body, sessionId);
+    }
+
     switch (tool) {
       case 'check_availability':
         return handleCheckAvailability(params_resolved);
 
       case 'book_appointment':
         return handleBookAppointment(params_resolved, sessionId);
-        
+
       default:
-        console.log('[webhook] unknown tool:', tool, 'full body:', JSON.stringify(body));
-        return NextResponse.json({ received: true, tool });
+        console.log('[webhook] unknown tool:', tool);
+        return NextResponse.json({ received: true });
     }
     
   } catch (error) {
     console.error('[webhook] error:', error);
     return NextResponse.json({ received: true }, { status: 200 });
   }
+}
+
+async function handleCallCompletion(body: any, sessionId: string | null) {
+  const input = body.variables?.input;
+  const { slotId, doctorId, reason, patientInfo } = input;
+
+  // Prefer stored patient (has guaranteed email) over what Bland.ai sent
+  let storedPatient = null;
+  const resolvedSessionId = sessionId ?? body.metadata?.sessionId ?? body.variables?.metadata?.sessionId;
+  if (resolvedSessionId) {
+    const conversation = await getConversation(resolvedSessionId);
+    storedPatient = conversation?.patient ?? null;
+  }
+
+  const patient = storedPatient
+    ? { ...patientInfo, ...storedPatient }
+    : patientInfo;
+
+  console.log('[webhook] call completion — patient email:', patient?.email);
+
+  if (!patient?.email) {
+    console.error('[webhook] call completion — no email found, cannot send confirmation');
+    return NextResponse.json({ received: true });
+  }
+
+  const doctor = doctors.find(d => d.id === Number(doctorId));
+  const now = new Date();
+  const slot = doctor?.availability.find(s => s.id === slotId && s.datetime > now);
+
+  const appointment = {
+    id: crypto.randomUUID(),
+    patient,
+    doctorId: Number(doctorId),
+    doctorName: doctor?.name || '',
+    specialty: doctor?.specialty || '',
+    slotId,
+    datetime: slot ? slot.datetime.toISOString() : now.toISOString(),
+    reason,
+    createdAt: now.toISOString()
+  };
+
+  try {
+    await saveAppointment(appointment);
+    console.log('[webhook] call completion — appointment saved');
+  } catch (dbErr) {
+    console.error('[webhook] call completion — saveAppointment failed:', dbErr);
+  }
+
+  try {
+    await sendAppointmentEmail(appointment);
+    console.log('[webhook] call completion — email sent to:', patient.email);
+  } catch (emailErr) {
+    console.error('[webhook] call completion — email failed:', emailErr);
+  }
+
+  return NextResponse.json({ received: true });
 }
 
 function handleCheckAvailability(params: any) {
@@ -120,10 +183,20 @@ async function handleBookAppointment(params: any, sessionId: string | null) {
     createdAt: new Date().toISOString()
   };
 
-  await saveAppointment(appointment);
-  await sendAppointmentEmail(appointment);
+  // Save and email are independent — a DB error must not block the email
+  try {
+    await saveAppointment(appointment);
+    console.log('[webhook] appointment saved');
+  } catch (dbErr) {
+    console.error('[webhook] saveAppointment failed (continuing to email):', dbErr);
+  }
 
-  console.log('[webhook] appointment saved and email sent to:', patient?.email);
+  try {
+    await sendAppointmentEmail(appointment);
+    console.log('[webhook] email sent to:', patient?.email);
+  } catch (emailErr) {
+    console.error('[webhook] sendAppointmentEmail failed:', emailErr);
+  }
 
   return NextResponse.json({
     success: true,
