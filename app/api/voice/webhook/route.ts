@@ -80,11 +80,11 @@ async function handleCallCompletion(body: any) {
 
   console.log('[webhook] call completion — patient:', patient.firstName, patient.email);
 
-  // Find which slot was booked by matching the summary text against our slot database
-  const doctor = doctors.find(d => d.id === doctorId);
-  const slot   = doctor ? findSlotFromSummary(summary, doctor) : null;
+  // Parse the booked datetime directly from the summary text
+  const doctor        = doctors.find(d => d.id === doctorId);
+  const parsedDate    = parseDatetimeFromSummary(summary);
 
-  console.log('[webhook] call completion — matched slot:', slot?.id ?? 'none, using fallback');
+  console.log('[webhook] call completion — parsed datetime:', parsedDate?.toISOString() ?? 'none');
 
   // Use reason from pendingBooking (stored in session) or a generic fallback
   let reason = 'Medical appointment';
@@ -99,8 +99,8 @@ async function handleCallCompletion(body: any) {
     doctorId,
     doctorName: doctor?.name ?? '',
     specialty:  doctor?.specialty ?? '',
-    slotId:     slot?.id ?? 'voice-booking',
-    datetime:   slot ? slot.datetime.toISOString() : new Date().toISOString(),
+    slotId:     'voice-booking',
+    datetime:   parsedDate ? parsedDate.toISOString() : new Date().toISOString(),
     reason,
     createdAt:  new Date().toISOString(),
   };
@@ -122,34 +122,37 @@ async function handleCallCompletion(body: any) {
   return NextResponse.json({ received: true });
 }
 
-// Match a slot against the Bland.ai summary text.
-// Summary example: "Tuesday, March 24th at 8:30 AM"
-function findSlotFromSummary(summary: string, doctor: (typeof doctors)[0]): (typeof doctor.availability)[0] | null {
-  const now   = new Date();
-  const lower = summary.toLowerCase();
-  const slots = doctor.availability.filter(s => s.available && s.datetime > now);
+// Parse the booked datetime directly from Bland.ai's summary text.
+// Handles: "March 24th at 8:30 AM", "March 24th at 9 AM", "March 24 at 9:00 AM"
+function parseDatetimeFromSummary(summary: string): Date | null {
+  const months: Record<string, number> = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+  };
 
-  for (const slot of slots) {
-    const day   = slot.datetime.getDate();
-    const hr    = slot.datetime.getHours();
-    const min   = slot.datetime.getMinutes();
-    const hr12  = hr % 12 || 12;
-    const ampm  = hr < 12 ? 'am' : 'pm';
+  const match = summary.match(
+    /(\w+)\s+(\d+)(?:st|nd|rd|th)?\s+at\s+(\d+)(?::(\d+))?\s*(AM|PM)/i
+  );
+  if (!match) return null;
 
-    const dayMatch = lower.includes(day.toString());
+  const [, monthStr, dayStr, hourStr, minStr, ampm] = match;
+  const month = months[monthStr.toLowerCase()];
+  if (month === undefined) return null;
 
-    const timeVariants = [
-      `${hr12}:${min.toString().padStart(2, '0')} ${ampm}`,  // "8:30 am"
-      `${hr12}:${min.toString().padStart(2, '0')}${ampm}`,   // "8:30am"
-      ...(min === 0 ? [`${hr12} ${ampm}`, `${hr12}${ampm}`] : []), // "9 am" / "9am"
-    ];
+  const day = parseInt(dayStr);
+  let hour  = parseInt(hourStr);
+  const min = parseInt(minStr ?? '0');
 
-    const timeMatch = timeVariants.some(t => lower.includes(t));
+  if (ampm.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+  if (ampm.toUpperCase() === 'AM' && hour === 12)  hour  = 0;
 
-    if (dayMatch && timeMatch) return slot;
-  }
+  const year = new Date().getFullYear();
+  const date = new Date(year, month, day, hour, min, 0);
 
-  return null;
+  // If parsed date is in the past, assume next year
+  if (date < new Date()) date.setFullYear(year + 1);
+
+  return date;
 }
 
 function handleCheckAvailability(params: any) {
