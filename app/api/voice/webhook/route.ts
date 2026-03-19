@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { doctors } from '@/lib/doctors';
-import { saveAppointment, getConversationByPhone } from '@/lib/db';
+import { saveAppointment, getConversation, getConversationByPhone } from '@/lib/db';
 import { sendAppointmentEmail } from '@/lib/email';
 import { format } from 'date-fns';
 
@@ -87,16 +87,34 @@ function handleCheckAvailability(params: any) {
 
 async function handleBookAppointment(params: any, metadata: any) {
   console.log('[webhook] book_appointment params:', JSON.stringify(params));
-  
+  console.log('[webhook] metadata:', JSON.stringify(metadata));
+
   const { slotId, patientInfo, doctorId, reason } = params;
+
+  // Look up the stored patient from the session — Bland.ai often omits email
+  // since the patient never verbally repeated it during the call.
+  let storedPatient = null;
+  if (metadata?.sessionId) {
+    const conversation = await getConversation(metadata.sessionId);
+    storedPatient = conversation?.patient ?? null;
+    console.log('[webhook] stored patient from session:', storedPatient?.firstName, storedPatient?.email);
+  }
+
+  // Merge: stored patient is the authoritative base; Bland.ai fields fill any gaps
+  const patient = storedPatient
+    ? { ...storedPatient, ...patientInfo, email: storedPatient.email }
+    : patientInfo;
+
+  console.log('[webhook] resolved patient email:', patient?.email);
+
   const doctor = doctors.find(d => d.id === Number(doctorId));
   const slot = doctor?.availability.find(s => s.id === slotId);
-  
+
   console.log('[webhook] found doctor:', doctor?.name, 'found slot:', slot?.id);
 
   const appointment = {
     id: crypto.randomUUID(),
-    patient: patientInfo,
+    patient,
     doctorId: Number(doctorId),
     doctorName: doctor?.name || '',
     specialty: doctor?.specialty || '',
@@ -105,15 +123,15 @@ async function handleBookAppointment(params: any, metadata: any) {
     reason,
     createdAt: new Date().toISOString()
   };
-  
+
   await saveAppointment(appointment);
   await sendAppointmentEmail(appointment);
-  
-  console.log('[webhook] appointment saved and email sent');
-  
+
+  console.log('[webhook] appointment saved and email sent to:', patient?.email);
+
   return NextResponse.json({
     success: true,
     appointmentId: appointment.id,
-    message: `Appointment booked with ${doctor?.name}. Confirmation email sent to ${patientInfo?.email}.`
+    message: `Appointment booked with ${doctor?.name}. Confirmation email sent to ${patient?.email}.`
   });
 }

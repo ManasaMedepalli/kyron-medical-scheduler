@@ -69,7 +69,7 @@ export async function sendAppointmentEmail(appointment: Appointment) {
             <p><strong>Reason:</strong> ${appointment.reason}</p>
           </div>
           <p>Please arrive 10 minutes early for check-in.</p>
-          <p>If you need to reschedule, please call us at (312) 555-0100.</p>
+          <p>If you need to reschedule, please call us at (401) 555-0100.</p>
           <p>Best regards,<br>Kyron Medical Team</p>
         </div>
       `
