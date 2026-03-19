@@ -154,7 +154,11 @@ export async function POST(req: NextRequest) {
     }
     
     const patient = conversation.patient;
-    
+
+    // Normalize phone to E.164 — Bland.ai requires +1XXXXXXXXXX format
+    const rawPhone = patient.phone.replace(/\D/g, '');
+    const e164Phone = rawPhone.startsWith('1') ? `+${rawPhone}` : `+1${rawPhone}`;
+
     // Build context for voice agent
     const doctor = conversation.pendingBooking 
       ? doctors.find(d => d.id === conversation.pendingBooking?.doctorId)
@@ -211,7 +215,7 @@ Available doctors at Kyron Medical:
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        phone_number: patient.phone,
+        phone_number: e164Phone,
         task: taskPrompt,
         voice: 'maya',
         first_sentence: `Hi ${patient.firstName}, I'm continuing our conversation about your ${conversation.pendingBooking?.reason || 'appointment'}. ${getContextualGreeting(conversation)}`,

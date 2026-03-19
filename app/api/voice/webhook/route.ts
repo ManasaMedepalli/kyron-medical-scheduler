@@ -55,7 +55,8 @@ function handleCheckAvailability(params: any) {
     return NextResponse.json({ success: false, message: 'Doctor not found' });
   }
 
-  let slots = doctor.availability.filter(s => s.available);
+  const now = new Date();
+  let slots = doctor.availability.filter(s => s.available && s.datetime > now);
   
   if (preferredDay) {
     const dayLower = preferredDay.toLowerCase();

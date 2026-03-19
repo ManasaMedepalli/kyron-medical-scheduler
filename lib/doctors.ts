@@ -109,8 +109,9 @@ export function getAvailableSlots(
 ): TimeSlot[] {
   const doctor = doctors.find(d => d.id === doctorId);
   if (!doctor) return [];
-  
-  let slots = doctor.availability.filter(s => s.available);
+
+  const now = new Date();
+  let slots = doctor.availability.filter(s => s.available && s.datetime > now);
   
   if (preferredDay) {
     const dayLower = preferredDay.toLowerCase();
