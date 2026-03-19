@@ -25,11 +25,11 @@ export async function POST(req: NextRequest) {
     const sessionId = req.nextUrl.searchParams.get('sessionId') ?? body.metadata?.sessionId ?? null;
     console.log('[webhook] sessionId from URL:', sessionId);
 
-    // Call completion event — Bland.ai sends this after the call ends.
-    // variables.input contains the last tool call (book_appointment) with full patientInfo.
-    if (!tool && body.status === 'completed' && body.variables?.input?.slotId) {
-      console.log('[webhook] call completion event — processing booking from variables.input');
-      return handleCallCompletion(body, sessionId);
+    // Call completion event — Bland.ai sends this after the call ends with no `tool` field.
+    // disposition_tag === 'COMPLETED_ACTION' means the AI successfully booked an appointment.
+    if (!tool && body.disposition_tag === 'COMPLETED_ACTION' && body.metadata?.sessionId) {
+      console.log('[webhook] call completion — COMPLETED_ACTION, processing email');
+      return handleCallCompletion(body);
     }
 
     switch (tool) {
@@ -50,15 +50,15 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function handleCallCompletion(body: any, sessionId: string | null) {
+async function handleCallCompletion(body: any) {
+  const sessionId = body.metadata?.sessionId ?? null;
   const input = body.variables?.input;
   const { slotId, doctorId, reason, patientInfo } = input;
 
   // Prefer stored patient (has guaranteed email) over what Bland.ai sent
   let storedPatient = null;
-  const resolvedSessionId = sessionId ?? body.metadata?.sessionId ?? body.variables?.metadata?.sessionId;
-  if (resolvedSessionId) {
-    const conversation = await getConversation(resolvedSessionId);
+  if (sessionId) {
+    const conversation = await getConversation(sessionId);
     storedPatient = conversation?.patient ?? null;
   }
 
