@@ -220,43 +220,47 @@ Available doctors at Kyron Medical:
         wait_for_greeting: false,
         webhook: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook`,
         tools: [
-          {
-            name: 'check_availability',
-            description: 'Check available appointment slots for a doctor',
-            input_schema: {
-              type: 'object',
-              properties: {
-                doctorId: { type: 'number', description: 'Doctor ID (1=Orthopedics, 2=Cardiology, 3=Dermatology, 4=Gastroenterology)' },
-                preferredDay: { type: 'string', description: 'Optional preferred day of week e.g. Monday' }
-              },
-              required: ['doctorId']
-            }
-          },
-          {
-            name: 'book_appointment',
-            description: 'Book a confirmed appointment slot',
-            input_schema: {
-              type: 'object',
-              properties: {
-                slotId: { type: 'string', description: 'Slot ID to book' },
-                doctorId: { type: 'number', description: 'Doctor ID' },
-                reason: { type: 'string', description: 'Reason for visit' },
-                patientInfo: {
-                  type: 'object',
-                  description: 'Patient information',
-                  properties: {
-                    firstName: { type: 'string' },
-                    lastName: { type: 'string' },
-                    dob: { type: 'string' },
-                    phone: { type: 'string' },
-                    email: { type: 'string' }
-                  }
+            {
+                name: 'check_availability',
+                description: 'Check available appointment slots for a doctor',
+                url: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook`,
+                method: 'POST',
+                input_schema: {
+                type: 'object',
+                properties: {
+                    doctorId: { type: 'number', description: 'Doctor ID (1=Orthopedics, 2=Cardiology, 3=Dermatology, 4=Gastroenterology)' },
+                    preferredDay: { type: 'string', description: 'Optional preferred day of week e.g. Monday' }
+                },
+                required: ['doctorId']
                 }
-              },
-              required: ['slotId', 'doctorId', 'reason', 'patientInfo']
+            },
+            {
+                name: 'book_appointment',
+                description: 'Book a confirmed appointment slot',
+                url: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook`,
+                method: 'POST',
+                input_schema: {
+                type: 'object',
+                properties: {
+                    slotId: { type: 'string', description: 'Slot ID to book' },
+                    doctorId: { type: 'number', description: 'Doctor ID' },
+                    reason: { type: 'string', description: 'Reason for visit' },
+                    patientInfo: {
+                    type: 'object',
+                    description: 'Patient information',
+                    properties: {
+                        firstName: { type: 'string' },
+                        lastName: { type: 'string' },
+                        dob: { type: 'string' },
+                        phone: { type: 'string' },
+                        email: { type: 'string' }
+                    }
+                    }
+                },
+                required: ['slotId', 'doctorId', 'reason', 'patientInfo']
+                }
             }
-          }
-        ],
+            ],
         metadata: {
           sessionId,
           patientEmail: patient.email,
