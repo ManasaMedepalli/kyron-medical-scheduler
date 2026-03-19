@@ -227,7 +227,7 @@ Available doctors at Kyron Medical:
             {
                 name: 'check_availability',
                 description: 'Check available appointment slots for a doctor',
-                url: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook`,
+                url: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook?sessionId=${sessionId}`,
                 method: 'POST',
                 input_schema: {
                 type: 'object',
@@ -241,7 +241,7 @@ Available doctors at Kyron Medical:
             {
                 name: 'book_appointment',
                 description: 'Book a confirmed appointment slot',
-                url: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook`,
+                url: `${process.env.NEXT_PUBLIC_APP_URL}/api/voice/webhook?sessionId=${sessionId}`,
                 method: 'POST',
                 input_schema: {
                 type: 'object',

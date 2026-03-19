@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { doctors } from '@/lib/doctors';
-import { saveAppointment, getConversation, getConversationByPhone } from '@/lib/db';
+import { saveAppointment, getConversation } from '@/lib/db';
 import { sendAppointmentEmail } from '@/lib/email';
 import { format } from 'date-fns';
 
@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     const text = await req.text();
     console.log('[webhook] raw body:', text);
-    
+
     if (!text || text.trim() === '') {
       console.log('[webhook] empty body received');
       return NextResponse.json({ received: true });
@@ -16,25 +16,21 @@ export async function POST(req: NextRequest) {
 
     const body = JSON.parse(text);
     console.log('[webhook] parsed body:', JSON.stringify(body));
-    
-    const { tool, parameters, input, metadata } = body;
+
+    const { tool, parameters, input } = body;
     const params_resolved = parameters ?? input;
 
-    const callerPhone = body.from || body.caller || body.phone;
-    if (callerPhone) {
-      const prior = await getConversationByPhone(callerPhone);
-      if (prior?.patient) {
-        const p = prior.patient;
-        console.log('[webhook] returning patient:', p.firstName, p.lastName);
-      }
-    }
-    
+    // sessionId is embedded in the URL query string since Bland.ai
+    // does not forward call-level metadata to tool webhook calls
+    const sessionId = req.nextUrl.searchParams.get('sessionId') ?? body.metadata?.sessionId ?? null;
+    console.log('[webhook] sessionId from URL:', sessionId);
+
     switch (tool) {
       case 'check_availability':
         return handleCheckAvailability(params_resolved);
 
       case 'book_appointment':
-        return handleBookAppointment(params_resolved, metadata);
+        return handleBookAppointment(params_resolved, sessionId);
         
       default:
         console.log('[webhook] unknown tool:', tool, 'full body:', JSON.stringify(body));
@@ -85,24 +81,24 @@ function handleCheckAvailability(params: any) {
   });
 }
 
-async function handleBookAppointment(params: any, metadata: any) {
+async function handleBookAppointment(params: any, sessionId: string | null) {
   console.log('[webhook] book_appointment params:', JSON.stringify(params));
-  console.log('[webhook] metadata:', JSON.stringify(metadata));
+  console.log('[webhook] sessionId:', sessionId);
 
   const { slotId, patientInfo, doctorId, reason } = params;
 
-  // Look up the stored patient from the session — Bland.ai often omits email
-  // since the patient never verbally repeated it during the call.
+  // Look up the stored patient — Bland.ai never verbally collects email so
+  // patientInfo.email is always missing. We retrieve it from the saved session.
   let storedPatient = null;
-  if (metadata?.sessionId) {
-    const conversation = await getConversation(metadata.sessionId);
+  if (sessionId) {
+    const conversation = await getConversation(sessionId);
     storedPatient = conversation?.patient ?? null;
-    console.log('[webhook] stored patient from session:', storedPatient?.firstName, storedPatient?.email);
+    console.log('[webhook] stored patient:', storedPatient?.firstName, storedPatient?.email);
   }
 
-  // Merge: stored patient is the authoritative base; Bland.ai fields fill any gaps
+  // Stored patient is authoritative (has email); Bland.ai patientInfo fills any gaps
   const patient = storedPatient
-    ? { ...storedPatient, ...patientInfo, email: storedPatient.email }
+    ? { ...patientInfo, ...storedPatient }
     : patientInfo;
 
   console.log('[webhook] resolved patient email:', patient?.email);
